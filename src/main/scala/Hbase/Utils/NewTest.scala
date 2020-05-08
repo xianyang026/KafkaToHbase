@@ -1,6 +1,26 @@
 package Hbase.Utils
 
 
+/**
+ *
+ *
+ * 设备唯一标识  String devSyId
+ * 设备时间  String deviceTime
+ * 平台时间 String serviceTime
+ * 经度 String longitude
+ * 纬度 String latitude
+ * 设备类型 String devType
+ * 路由设备id  String routeDevSysId
+ * 路由设备类型 String routeDevType
+ * 硬件版本  String hardwareVersion
+ * 软件版本  String softVersion
+ * 下发方式  String deliveryMethod;
+ * 协议版本   String version;
+ *
+ *
+ *
+ */
+
 
 import java.util
 
@@ -19,6 +39,7 @@ import org.apache.spark.streaming.{Seconds, StreamingContext}
 object NewTest {
   def main(args: Array[String]): Unit = {
     val conf = new SparkConf().setAppName("K2SS2H_ly2").set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+      .setMaster("local[*]")
     //设置反压，限制读取
     //conf.set("spark.streaming.backpressure.enabled","true")
     //conf.set("spark.streaming.kafka.maxRatePerPartition","10000")
@@ -61,7 +82,7 @@ object NewTest {
             var weidu = lines(12)
 
             val dType=lines(2)//设备类型
-            val routeDevSysIdStr=lines(14)//路由器唯一标识
+            val routeDevSysId=lines(10)//路由器id
             val roteType=lines(9)//路由器类型
             val value=lines(6)//value
               //硬件版本,软件版本,下发方式,协议版本会在value里提现
@@ -69,10 +90,10 @@ object NewTest {
               val hardwareVersion=parseJson.parseJson1(value,"hardwareVersion")//硬件版本
               val deliveryMethod=parseJson.parseJson1(value,"deliveryMethod")//下发方式
               val version=parseJson.parseJson1(value,"version")//协议版本
-             println("111111111"+rowkey+","+dTime+","+sTime+","+jingdu+","+weidu+","+
+/*             println("111111111"+rowkey+","+dTime+","+sTime+","+jingdu+","+weidu+","+
              dType+","+routeDevSysIdStr+","+roteType,","+softVersion+","+hardwareVersion+","+deliveryMethod+","+
-             version)
-            caseHbase(rowkey, dTime, sTime, jingdu, weidu,dType,routeDevSysIdStr,roteType,softVersion,hardwareVersion,deliveryMethod,version)
+             version)*/
+            caseHbase(rowkey, dTime, sTime, jingdu, weidu,dType,routeDevSysId,roteType,softVersion,hardwareVersion,deliveryMethod,version)
           })
         })
 
@@ -124,10 +145,9 @@ object NewTest {
           })
         })
 
-
+        //两个rdd取并集
         val rdd3 = rdd1.union(rdd2)
-
-
+        //用rowkey 进行分组，之后进行比较最新的deviceTime
         val resultRDD = rdd3.groupBy(_.rowkey).map(t => {
           var rowkey = "00"
           var maxTime = "00"
@@ -144,19 +164,19 @@ object NewTest {
 
           val iterator: Iterator[caseHbase] = t._2.toIterator
 
-          val hbases: List[caseHbase] = iterator.toList.sortBy(_.dTime)
+          val hbases: List[caseHbase] = iterator.toList.sortBy(_.deviceTime)
 
           for(se<- hbases){
-            val dTime=se.dTime
+            val dTime=se.deviceTime
             if(dTime >= maxTime){
               rowkey=se.rowkey
-              maxTime=se.dTime
-              sTime=se.sTime
-              jingdu=se.jingdu
-              weidu=se.weidu
-              dType=se.dType
-              routeDevSysIdStr=se.routeDevSysIdStr
-              roteType=se.roteType
+              maxTime=se.deviceTime
+              sTime=se.serviceTime
+              jingdu=se.longitude
+              weidu=se.latitude
+              dType=se.devType
+              routeDevSysIdStr=se.routeDevSysId
+              roteType=se.routeDevType
               softVersion=se.softVersion
               hardwareVersion=se.hardwareVersion
               deliveryMethod=se.deliveryMethod
@@ -167,11 +187,13 @@ object NewTest {
 
         })
 
-
+        //此时已经比较出最新的时间了，如果要往kafka写数据，可以操作resultRDD
+        //
 
 
         //可以向hbase中写数据了
         resultRDD.foreachPartition(partition => {
+          //这里调用了hbase的封装连接方法，在这个方法里面把zookeeper的地址写死了
           val conn_ts = new Conn().getConn()
           val puts_ts = new util.ArrayList[Put] //封装用
           val tableName_ts = TableName.valueOf("test_updata3") // habase的表名
@@ -180,13 +202,13 @@ object NewTest {
             partition.foreach(q => {
 
               val rowkey: String = q.rowkey
-              val dtime = q.dTime
-              val stime = q.sTime
-              val jd = q.jingdu
-              val wd = q.weidu
-              val dType = q.dType
-              val routeDevSysIdStr = q.routeDevSysIdStr
-              val roteType = q.roteType
+              val dtime = q.deviceTime
+              val stime = q.serviceTime
+              val jd = q.longitude
+              val wd = q.latitude
+              val dType = q.devType
+              val routeDevSysIdStr = q.routeDevSysId
+              val roteType = q.routeDevType
               val softVersion = q.softVersion
               val hardwareVersion = q.hardwareVersion
               val deliveryMethod = q.deliveryMethod
@@ -244,7 +266,7 @@ object NewTest {
   }
 
 
-  case class caseHbase (rowkey:String,dTime:String,sTime:String,jingdu:String,weidu:String,dType:String,routeDevSysIdStr:String,roteType:String,
+  case class caseHbase (rowkey:String,deviceTime:String,serviceTime:String,longitude:String,latitude:String,devType:String,routeDevSysId:String,routeDevType:String,
                         softVersion:String,hardwareVersion:String,deliveryMethod:String,version:String)
 
 }
